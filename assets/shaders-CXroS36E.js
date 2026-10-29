@@ -1,4 +1,4 @@
-const c=`
+const f=`
 precision highp float;
 
 attribute vec2 aSeed;
@@ -30,7 +30,7 @@ varying float vA;
 varying vec3  vCol;
 varying float vSoft;
 
-const float PX_REF = 110.0;
+const float PX_REF = 90.0;
 
 vec3 flow(vec3 p, float t) {
   return vec3(
@@ -42,7 +42,8 @@ vec3 flow(vec3 p, float t) {
 void main() {
   float s   = aSeed.x;
   float isW = step(0.5, aKind) * (1.0 - step(1.5, aKind));
-  float isS = step(1.5, aKind);
+  float isS = step(1.5, aKind) * (1.0 - step(2.5, aKind));
+  float isD = step(2.5, aKind);
 
   vec3 p = position;
 
@@ -98,26 +99,29 @@ void main() {
 
   vec3 col;
   float a;
-  if (isW > 0.5) {
+  if (isD > 0.5) {
+    col = uHot;
+    a = 0.10 * (0.6 + 0.4 * s);
+  } else if (isW > 0.5) {
     col = mix(uWFar, uWNear, pow(zN, 0.85));
-    col = mix(col, uHot, 0.22 * smoothstep(0.55, 1.4, wv));
-    a = 1.05 * (0.62 + 0.38 * zN);
+    col = mix(col, uHot, 0.30 * smoothstep(0.55, 1.4, wv));
+    a = 0.40 * (0.7 + 0.3 * zN);
   } else if (isS > 0.5) {
-    col = mix(uNear, uHot, 0.68);
-    a = 0.9;
+    col = mix(uNear, uHot, 0.6);
+    a = 0.12;
   } else {
-    col = mix(uFar, uNear, pow(hN, 1.20));
-    col = mix(col, uHot, smoothstep(0.84, 1.0, hN) * 0.55);
-    col = mix(col, uRed, step(0.988, aSeed.y) * 0.85);
-    a = 0.72 * (0.3 + 0.7 * clamp(hN * 1.6, 0.0, 1.0));
+    col = mix(uFar, uNear, pow(hN, 1.25));
+    col = mix(col, uHot, smoothstep(0.88, 1.0, hN) * 0.5);
+    col = mix(col, uRed, step(0.99, aSeed.y) * 0.6);
+    a = 0.34 * (0.55 + 0.45 * clamp(hN * 1.8, 0.0, 1.0));
   }
-  a *= tw * energy / (1.0 + coc * coc * 5.0);
+  a *= tw * energy / (1.0 + coc * coc * 3.0);
   a *= uFade;
 
   vA  = a;
   vCol = col;
 }
-`,f=`
+`,c=`
 precision mediump float;
 
 varying float vA;
@@ -133,4 +137,4 @@ void main() {
   float a = mix(sharp, soft, vSoft);
   gl_FragColor = vec4(vCol, vA * a);
 }
-`;function s(a,i){const o=a.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);if(o)return new Float32Array([Number(o[1])/255,Number(o[2])/255,Number(o[3])/255]);const e=a.match(/^#([0-9a-f]{6})$/i);if(e){const t=parseInt(e[1],16);return new Float32Array([(t>>16&255)/255,(t>>8&255)/255,(t&255)/255])}return new Float32Array(i)}function m(a){const i=getComputedStyle(a),o=document.createElement("span");o.style.display="none",document.body.appendChild(o);const e=(n,l)=>{const r=i.getPropertyValue(n).trim();if(!r)return new Float32Array(l);o.style.color="",o.style.color=r;const u=getComputedStyle(o).color;return s(u||r,l)},t={far:e("--land-far",[.18,.227,.235]),near:e("--land-near",[.478,.353,.188]),hot:e("--land-hot",[.847,.753,.569]),red:e("--land-red",[.722,.271,.173]),waterFar:e("--land-w-far",[.227,.29,.322]),waterNear:e("--land-w-near",[.541,.435,.271])};return o.remove(),t}export{f as LAND_FS,c as LAND_VS,m as readPalette};
+`;function u(a,i){const o=a.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);if(o)return new Float32Array([Number(o[1])/255,Number(o[2])/255,Number(o[3])/255]);const e=a.match(/^#([0-9a-f]{6})$/i);if(e){const t=parseInt(e[1],16);return new Float32Array([(t>>16&255)/255,(t>>8&255)/255,(t&255)/255])}return new Float32Array(i)}function m(a){const i=getComputedStyle(a),o=document.createElement("span");o.style.display="none",document.body.appendChild(o);const e=(n,l)=>{const r=i.getPropertyValue(n).trim();if(!r)return new Float32Array(l);o.style.color="",o.style.color=r;const s=getComputedStyle(o).color;return u(s||r,l)},t={far:e("--land-far",[.18,.227,.235]),near:e("--land-near",[.478,.353,.188]),hot:e("--land-hot",[.847,.753,.569]),red:e("--land-red",[.722,.271,.173]),waterFar:e("--land-w-far",[.227,.29,.322]),waterNear:e("--land-w-near",[.541,.435,.271])};return o.remove(),t}export{c as LAND_FS,f as LAND_VS,m as readPalette};

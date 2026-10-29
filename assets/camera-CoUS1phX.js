@@ -1,0 +1,1 @@
+import{V as t}from"./three-DtdP29C2.js";const a={pos:new t(0,3,50),target:new t(0,0,-5),fov:50,near:.5,far:400,shift:.04},r={waterY:-8,shoreZ:-2,waterFarZ:-2,peakY:25,peak:25,waterDepth:25},o=a.pos.distanceTo(a.target);export{o as F,a as R,r as W};

@@ -105,15 +105,15 @@ void main() {
   } else if (isW > 0.5) {
     col = mix(uWFar, uWNear, pow(zN, 0.85));
     col = mix(col, uHot, 0.30 * smoothstep(0.55, 1.4, wv));
-    a = 0.40 * (0.7 + 0.3 * zN);
+    a = 0.22 * (0.7 + 0.3 * zN);
   } else if (isS > 0.5) {
     col = mix(uNear, uHot, 0.6);
-    a = 0.12;
+    a = 0.08;
   } else {
     col = mix(uFar, uNear, pow(hN, 1.25));
     col = mix(col, uHot, smoothstep(0.88, 1.0, hN) * 0.5);
     col = mix(col, uRed, step(0.99, aSeed.y) * 0.6);
-    a = 0.34 * (0.55 + 0.45 * clamp(hN * 1.8, 0.0, 1.0));
+    a = 0.34 * (0.75 + 0.25 * clamp(hN * 1.8, 0.0, 1.0));
   }
   a *= tw * energy / (1.0 + coc * coc * 3.0);
   a *= uFade;

@@ -1,1 +1,0 @@
-import{V as o}from"./three-DtdP29C2.js";const t={pos:new o(5,3.6,40),target:new o(-2,4.6,-14),fov:50,near:.5,far:400,shift:.05},e={waterY:-7,shoreZ:-12,peak:27,waterDepth:16,mountainFarZ:-38,mountainNearZ:-26};function n(a){return a<.7?46:t.fov}const s=t.pos.distanceTo(t.target);export{s as F,t as R,e as W,n as f};

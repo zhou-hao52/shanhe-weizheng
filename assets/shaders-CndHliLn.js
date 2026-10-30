@@ -105,7 +105,8 @@ void main() {
   } else if (isW > 0.5) {
     col = mix(uWFar, uWNear, pow(zN, 0.85));
     col = mix(col, uHot, 0.30 * smoothstep(0.55, 1.4, wv));
-    a = 0.38 * (0.7 + 0.3 * zN);
+    // 远端（贴山脚那几行）补亮，近端保持虚化后的通透
+    a = 0.40 * (0.9 + 0.1 * zN) * (1.35 - 0.35 * zN);
   } else if (isS > 0.5) {
     col = mix(uNear, uHot, 0.6);
     a = 0.08;

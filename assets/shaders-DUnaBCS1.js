@@ -30,7 +30,7 @@ varying float vA;
 varying vec3  vCol;
 varying float vSoft;
 
-const float PX_REF = 90.0;
+const float PX_REF = 130.0;
 
 vec3 flow(vec3 p, float t) {
   return vec3(
@@ -53,10 +53,10 @@ void main() {
            + sin((p.x + p.z) * .5 + uTime * 1.3) * 0.15;
   p.y += wv * isW;
 
-  // ② 三维流场：山慢、水快，同一函数两个时标
-  float t = uTime * mix(0.14, 0.34, isW) + s * 6.2831;
+  // ② 三维流场：时标与幅度都用参考站原值（.35 / .07），山慢水快只体现在 mix 上
+  float t = uTime * 0.35 + s * 6.2831;
   p += flow(p * 0.55 + s * 3.0, t)
-       * (0.055 + 0.075 * aSeed.y)
+       * (0.07 + 0.05 * aSeed.y)
        * mix(0.55, 1.0, isW)
        * (1.0 + uVel * 0.8);
 
@@ -105,17 +105,17 @@ void main() {
   } else if (isW > 0.5) {
     col = mix(uWFar, uWNear, pow(zN, 0.85));
     col = mix(col, uHot, 0.30 * smoothstep(0.55, 1.4, wv));
-    a = 0.22 * (0.7 + 0.3 * zN);
+    a = 0.38 * (0.7 + 0.3 * zN);
   } else if (isS > 0.5) {
     col = mix(uNear, uHot, 0.6);
     a = 0.08;
   } else {
     col = mix(uFar, uNear, pow(hN, 1.25));
-    col = mix(col, uHot, smoothstep(0.88, 1.0, hN) * 0.5);
+    col = mix(col, uHot, smoothstep(0.88, 1.0, hN) * 0.3);
     col = mix(col, uRed, step(0.99, aSeed.y) * 0.6);
-    a = 0.34 * (0.75 + 0.25 * clamp(hN * 1.8, 0.0, 1.0));
+    a = 0.28 * (0.75 + 0.25 * clamp(hN * 1.8, 0.0, 1.0));
   }
-  a *= tw * energy / (1.0 + coc * coc * 3.0);
+  a *= tw * energy / (1.0 + coc * coc * 2.0);
   a *= uFade;
 
   vA  = a;

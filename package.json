@@ -1,0 +1,11 @@
+{
+  "name": "shanhe-weizheng",
+  "version": "0.1.0",
+  "private": true,
+  "description": "山河为证静态站与个人学习档案服务",
+  "engines": { "node": ">=24.0.0 <25" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "backup": "node --env-file-if-exists=.env server/backup.mjs"
+  }
+}

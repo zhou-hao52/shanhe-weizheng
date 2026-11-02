@@ -4,6 +4,7 @@
 data/
 backups/
 node_modules/
+dist/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

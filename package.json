@@ -3,9 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "description": "山河为证静态站与个人学习档案服务",
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env server/index.mjs",
-    "backup": "node --env-file-if-exists=.env server/backup.mjs"
+    "package:fc": "node deploy/fc/package.mjs",
+    "db:init": "node --env-file-if-exists=.env server/init-database.mjs",
+    "backup": "node --env-file-if-exists=.env server/backup.mjs",
+    "restore": "node --env-file-if-exists=.env server/restore.mjs",
+    "migrate:sqlite": "node --env-file-if-exists=.env server/migrate-sqlite.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.6"
   }
 }

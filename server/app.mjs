@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { openDatabase, readProgress, normalizeProgress, saveProgress, transaction } from './store.mjs';
+import { openDatabase, queryOne, readProgress, normalizeProgress, saveProgress, transaction } from './store.mjs';
 import { HttpError, randomSecret, digest, hashPassword, verifyPassword, validatePassword, createLimiter } from './security.mjs';
 
 const rootDirectory = fileURLToPath(new URL('../', import.meta.url));
@@ -53,44 +53,59 @@ function nicknameFrom(body, fallback) {
   return nickname;
 }
 
-export async function createApp({ databaseFile = './data/shanhe.sqlite', publicOrigin = 'http://localhost:3000', production = false } = {}) {
+export async function createApp({ databaseOptions, publicOrigin = 'http://localhost:3000', production = false, allowedOrigins = [] } = {}) {
   const originUrl = new URL(publicOrigin);
   if (!['http:', 'https:'].includes(originUrl.protocol) || originUrl.origin !== publicOrigin) throw new Error('PUBLIC_ORIGIN 必须是完整 origin，不能含路径或末尾斜线。');
   if (production && originUrl.protocol !== 'https:') throw new Error('生产环境必须配置 HTTPS PUBLIC_ORIGIN。');
-  const secureCookie = originUrl.protocol === 'https:';
-  const database = openDatabase(databaseFile);
+  const allowed = (allowedOrigins.length ? allowedOrigins : [publicOrigin]).map(value => {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== value) throw new Error('ALLOWED_ORIGINS 必须是完整 origin 列表，不能含路径或末尾斜线。');
+    return parsed.origin;
+  });
   const limit = createLimiter();
   const dummyPassword = await hashPassword(randomSecret());
   const rootReal = await realpath(rootDirectory);
+  const database = await openDatabase(databaseOptions);
 
-  function sessionCookie(token, age = sessionLifetime / 1000) {
-    return `${cookieName}=${token}; Path=${apiPrefix}; HttpOnly; SameSite=Strict; Max-Age=${age}${secureCookie ? '; Secure' : ''}`;
+  function applyCors(request, response) {
+    const origin = request.headers.origin;
+    if (origin && allowed.includes(origin)) {
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Vary', 'Origin');
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-SHW-Client, Authorization');
+      response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      response.setHeader('Access-Control-Max-Age', '600');
+    }
   }
 
   function tokenFrom(request) {
+    const authorization = request.headers.authorization || '';
+    if (authorization.startsWith('Bearer ')) return authorization.slice(7).trim();
     const part = (request.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(`${cookieName}=`));
     return part?.slice(cookieName.length + 1) || '';
   }
 
-  function authenticated(request) {
+  async function authenticated(request) {
     const token = tokenFrom(request);
-    const user = database.prepare(`
+    const user = await queryOne(database, `
       SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = ? AND sessions.expires_at > ?
-    `).get(digest(token), Date.now());
+    `, [digest(token), Date.now()]);
     if (!user) throw new HttpError(401, '请先登录，或重新登录已过期的账号。');
     return user;
   }
 
-  function issueSession(request, response, userId) {
+  async function issueSession(request, userId) {
     const token = randomSecret();
-    database.prepare('DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?').run(digest(tokenFrom(request)), Date.now());
-    database.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(digest(token), userId, Date.now() + sessionLifetime);
-    response.setHeader('Set-Cookie', sessionCookie(token));
+    await transaction(database, async connection => {
+      await connection.execute('DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?', [digest(tokenFrom(request)), Date.now()]);
+      await connection.execute('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [digest(token), userId, Date.now() + sessionLifetime]);
+    });
+    return { token, expiresAt: Date.now() + sessionLifetime };
   }
 
-  function accountState(user) {
-    return { user: publicUser(user), progress: readProgress(database, user.id) };
+  async function accountState(user) {
+    return { user: publicUser(user), progress: await readProgress(database, user.id) };
   }
 
   async function api(request, response, pathname) {
@@ -99,13 +114,13 @@ export async function createApp({ databaseFile = './data/shanhe.sqlite', publicO
     limit(`api:${remote}`, 300, 60000);
     if (!['GET', 'POST', 'PUT', 'PATCH'].includes(method)) throw new HttpError(405, '不支持此请求方法。');
     if (method !== 'GET') {
-      if (request.headers.origin !== publicOrigin || request.headers['x-shw-client'] !== 'account-v1') {
+      if (!request.headers.origin || !allowed.includes(request.headers.origin) || request.headers['x-shw-client'] !== 'account-v1') {
         throw new HttpError(403, '请求来源不受信任，请在账号服务所在网站操作。');
       }
     }
     if (pathname === `${apiPrefix}/health` && method === 'GET') {
-      database.prepare('SELECT 1').get();
-      return { service: 'shanhe-accounts', schemaVersion: 1 };
+      await queryOne(database, 'SELECT 1');
+      return { service: 'shanhe-accounts', database: 'mysql', schemaVersion: 1 };
     }
     const authPaths = ['register', 'login'].map(action => `${apiPrefix}/${action}`);
     if (authPaths.includes(pathname) && method === 'POST') {
@@ -119,49 +134,53 @@ export async function createApp({ databaseFile = './data/shanhe.sqlite', publicO
         const passwordHash = await hashPassword(body.password);
         const userId = randomUUID();
         const createdAt = new Date().toISOString();
-        transaction(database, () => {
-          if (database.prepare('SELECT id FROM users WHERE username = ?').get(username)) throw new HttpError(409, '账号无法注册，请更换账号名称或尝试登录。');
-          database.prepare('INSERT INTO users (id, username, nickname, password_hash, recovery_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-            .run(userId, username, nickname, passwordHash, '', createdAt);
-          database.prepare('INSERT INTO progress (user_id, updated_at) VALUES (?, ?)').run(userId, createdAt);
-        });
-        issueSession(request, response, userId);
+        try {
+          await transaction(database, async connection => {
+            await connection.execute('INSERT INTO users (id, username, nickname, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+              [userId, username, nickname, passwordHash, createdAt]);
+            await connection.execute('INSERT INTO progress (user_id, visited_json, favorites_json, quiz_json, updated_at) VALUES (?, ?, ?, ?, ?)',
+              [userId, '[]', '[]', '[]', createdAt]);
+          });
+        } catch (error) {
+          if (error.code === 'ER_DUP_ENTRY') throw new HttpError(409, '账号无法注册，请更换账号名称或尝试登录。');
+          throw error;
+        }
+        const session = await issueSession(request, userId);
         response.statusCode = 201;
-        return accountState(database.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+        return { ...accountState(await queryOne(database, 'SELECT * FROM users WHERE id = ?', [userId])), ...session };
       }
-      const user = database.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      const user = await queryOne(database, 'SELECT * FROM users WHERE username = ?', [username]);
       const valid = await verifyPassword(body.password, user?.password_hash || dummyPassword);
       if (!user || !valid) throw new HttpError(401, '账号或密码不正确。');
-      const current = database.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-      if (current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
-      issueSession(request, response, user.id);
-      return accountState(current);
+      const current = await queryOne(database, 'SELECT * FROM users WHERE id = ?', [user.id]);
+      if (!current || current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
+      const session = await issueSession(request, user.id);
+      return { ...accountState(current), ...session };
     }
-    const user = authenticated(request);
+    const user = await authenticated(request);
     if (pathname === `${apiPrefix}/me` && method === 'GET') return accountState(user);
     if (pathname === `${apiPrefix}/logout` && method === 'POST') {
       await readJson(request);
-      database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(digest(tokenFrom(request)));
-      response.setHeader('Set-Cookie', sessionCookie('', 0));
+      await database.execute('DELETE FROM sessions WHERE token_hash = ?', [digest(tokenFrom(request))]);
       return { loggedOut: true };
     }
     if (pathname === `${apiPrefix}/me` && method === 'PATCH') {
       const body = await readJson(request);
       if (body.expectedUserId !== user.id) throw new HttpError(409, '账号已切换，请刷新页面。');
-      database.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nicknameFrom(body, user.nickname), user.id);
-      return accountState(database.prepare('SELECT * FROM users WHERE id = ?').get(user.id));
+      await database.execute('UPDATE users SET nickname = ? WHERE id = ?', [nicknameFrom(body, user.nickname), user.id]);
+      return accountState(await queryOne(database, 'SELECT * FROM users WHERE id = ?', [user.id]));
     }
     if (pathname === `${apiPrefix}/progress` && method === 'PUT') {
       const body = await readJson(request);
       if (body.expectedUserId !== user.id) throw new HttpError(409, '账号已切换，已阻止同步到其他账号。');
-      return { progress: saveProgress(database, user.id, body.revision, body.progress) };
+      return { progress: await transaction(database, connection => saveProgress(connection, user.id, body.revision, body.progress)) };
     }
     if (pathname === `${apiPrefix}/import` && method === 'POST') {
       const body = await readJson(request);
       if (body.expectedUserId !== user.id || body.confirmed !== true) throw new HttpError(400, '请确认导入目标账号和游客记录。');
       const incoming = normalizeProgress(body.progress);
-      return transaction(database, () => {
-        const current = readProgress(database, user.id);
+      return transaction(database, async connection => {
+        const current = await readProgress(connection, user.id, true);
         if (body.revision !== current.revision) throw new HttpError(409, '云端进度已更新，请重新登录后再选择导入。');
         const merged = {
           visited: [...new Set([...current.visited, ...incoming.visited])].sort(),
@@ -169,7 +188,7 @@ export async function createApp({ databaseFile = './data/shanhe.sqlite', publicO
           quiz: [...new Set([...current.quiz, ...incoming.quiz])].sort(),
           lastNode: current.lastNode || incoming.lastNode
         };
-        return { progress: saveProgress(database, user.id, current.revision, merged) };
+        return { progress: await saveProgress(connection, user.id, current.revision, merged) };
       });
     }
     throw new HttpError(404, '接口不存在。');
@@ -211,6 +230,12 @@ export async function createApp({ databaseFile = './data/shanhe.sqlite', publicO
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('X-Frame-Options', 'DENY');
     response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    applyCors(request, response);
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     try {
       const url = new URL(request.url, publicOrigin);
       if (url.pathname.startsWith('/api/')) {
@@ -232,6 +257,6 @@ export async function createApp({ databaseFile = './data/shanhe.sqlite', publicO
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  server.on('close', () => database.close());
+  server.on('close', () => { database.end().catch(error => console.error('Database close failed:', error.code || error.name)); });
   return { server, database };
 }

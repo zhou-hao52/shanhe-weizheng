@@ -1,38 +1,72 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import mysql from 'mysql2/promise';
+import { readFileSync } from 'node:fs';
+import { databaseConfig } from './database-config.mjs';
 import { HttpError } from './security.mjs';
 
-export function openDatabase(filename) {
-  if (filename !== ':memory:') mkdirSync(dirname(resolve(filename)), { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(filename);
-  const version = database.prepare('PRAGMA user_version').get().user_version;
-  if (version > 1) {
-    database.close();
-    throw new Error('数据库版本高于当前程序，拒绝降级打开。');
-  }
-  database.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
-  return database;
-}
-
-export function transaction(database, callback) {
-  database.exec('BEGIN IMMEDIATE');
+export async function openDatabase(options = databaseConfig()) {
+  const { autoInitialize = true, ...connectionOptions } = options;
+  const database = mysql.createPool({
+    ...connectionOptions,
+    charset: 'utf8mb4',
+    connectionLimit: connectionOptions.connectionLimit ?? 5,
+    queueLimit: 100,
+    connectTimeout: 10000,
+    supportBigNumbers: true,
+    multipleStatements: false
+  });
   try {
-    const result = callback();
-    database.exec('COMMIT');
-    return result;
+    if (!autoInitialize) {
+      const version = await queryOne(database, 'SELECT version FROM schema_version WHERE id = 1');
+      if (version?.version !== 1) throw new Error('数据库尚未初始化或版本不兼容，请先执行 npm run db:init。');
+      await database.execute('SELECT id, username, nickname, password_hash, created_at FROM users LIMIT 0');
+      await database.execute('SELECT token_hash, user_id, expires_at FROM sessions LIMIT 0');
+      await database.execute('SELECT user_id, visited_json, favorites_json, quiz_json, last_node, revision, updated_at FROM progress LIMIT 0');
+      return database;
+    }
+    await database.execute(`CREATE TABLE IF NOT EXISTS schema_version (
+      id TINYINT PRIMARY KEY, version INT NOT NULL
+    ) ENGINE=InnoDB`);
+    const version = await queryOne(database, 'SELECT version FROM schema_version WHERE id = 1');
+    if (version && version.version !== 1) throw new Error('数据库版本与当前程序不兼容。');
+    const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
+    for (const statement of schema.split(';').map(value => value.trim()).filter(Boolean)) {
+      await database.execute(statement);
+    }
+    await database.execute('INSERT IGNORE INTO schema_version (id, version) VALUES (1, 1)');
+    return database;
   } catch (error) {
-    database.exec('ROLLBACK');
+    await database.end();
     throw error;
   }
 }
 
-export function readProgress(database, userId) {
-  const row = database.prepare('SELECT * FROM progress WHERE user_id = ?').get(userId);
+export async function queryOne(database, statement, parameters = []) {
+  const [rows] = await database.execute(statement, parameters);
+  return rows[0];
+}
+
+export async function transaction(database, callback) {
+  const connection = await database.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function readProgress(database, userId, lock = false) {
+  const row = await queryOne(database, `SELECT * FROM progress WHERE user_id = ?${lock ? ' FOR UPDATE' : ''}`, [userId]);
+  const decode = value => typeof value === 'string' ? JSON.parse(value) : value;
   return {
-    visited: JSON.parse(row.visited_json),
-    favorites: JSON.parse(row.favorites_json),
-    quiz: JSON.parse(row.quiz_json),
+    visited: decode(row.visited_json),
+    favorites: decode(row.favorites_json),
+    quiz: decode(row.quiz_json),
     lastNode: row.last_node,
     revision: row.revision,
     updatedAt: row.updated_at,
@@ -61,15 +95,15 @@ export function normalizeProgress(value) {
   };
 }
 
-export function saveProgress(database, userId, revision, value) {
+export async function saveProgress(database, userId, revision, value) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new HttpError(400, '缺少有效的数据版本。');
   const progress = normalizeProgress(value);
-  const result = database.prepare(`
+  const [result] = await database.execute(`
     UPDATE progress SET visited_json = ?, favorites_json = ?, quiz_json = ?,
       last_node = ?, revision = revision + 1, updated_at = ?
     WHERE user_id = ? AND revision = ?
-  `).run(JSON.stringify(progress.visited), JSON.stringify(progress.favorites), JSON.stringify(progress.quiz),
-    progress.lastNode, new Date().toISOString(), userId, revision);
-  if (result.changes !== 1) throw new HttpError(409, '另一设备已更新进度，已暂停同步，请先读取云端版本。');
+  `, [JSON.stringify(progress.visited), JSON.stringify(progress.favorites), JSON.stringify(progress.quiz),
+    progress.lastNode, new Date().toISOString(), userId, revision]);
+  if (result.affectedRows !== 1) throw new HttpError(409, '另一设备已更新进度，已暂停同步，请先读取云端版本。');
   return readProgress(database, userId);
 }

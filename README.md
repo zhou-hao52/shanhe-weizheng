@@ -5,26 +5,36 @@
 ## 已实现
 
 - 账号注册、登录、退出；昵称修改 API。
-- SQLite 持久化个人到访、收藏、题目学习标记、最近浏览节点。
+- MySQL 持久化个人到访、收藏、题目学习标记、最近浏览节点。
 - 页面右下方“我的足迹”：个人数量统计、继续探索、收藏列表和自动同步状态。
 - 登录时自动合并当前游客记录；登录后自动同步，换设备登录自动读取，无需手动导入或恢复。
 - 账号隔离、同步版本冲突检测、密码哈希、HttpOnly 会话、请求来源校验和基础限流。
-- 数据库在线备份命令。
+- 账号数据在线备份、空库恢复和旧 SQLite 数据迁移命令。
 
 账号模块在原主程序之外实现：加载前恢复本机档案，随后使用原页面已有的本地存储键检测变化。原主程序增加了 `shw:progress-updated` 事件桥接，云端变化可直接更新页面而不刷新答题过程；另有答题结束边界修复，详见 `docs/quiz-completion-fix.md`。原 WorkBuddy 留言、访问统计和管理员后台保持原逻辑，和本服务分开，不共享账号或数据库。
 
 ## 本地运行
 
-要求 Node.js 24.x。使用内置 HTTP、SQLite 和密码学模块，不需要安装第三方依赖。
+要求 Node.js 24.x、MySQL 8.0+，通过 `mysql2` 驱动连接。先由数据库管理员建立数据库及专用用户（替换示例密码；应用同机部署时可使用以下配置）：
+
+```sql
+CREATE DATABASE shanhe CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+CREATE USER 'shanhe'@'127.0.0.1' IDENTIFIED BY 'replace-with-a-strong-database-password';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX, REFERENCES ON shanhe.* TO 'shanhe'@'127.0.0.1';
+```
+
+不要让应用使用 root。远程数据库需将账号来源限制为应用服务器的内网地址，而不是开放给所有公网来源。
 
 ```sh
 cp .env.example .env
+npm ci
+# 编辑 .env，填写真实的 MYSQL_HOST / MYSQL_PORT / MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD
 npm start
 ```
 
 打开 `http://localhost:3000/shanhe-weizheng/`，点击“我的足迹”。请使用这里的 `localhost`，不要改成 `127.0.0.1`，除非同时调整 `PUBLIC_ORIGIN`，否则来源校验会阻止登录。
 
-默认数据库位于 `data/shanhe.sqlite`，重启服务不清空。首次启动自动初始化表。SQLite 在当前 Node 24 版本可能输出实验性 API 提示。
+首次启动自动在指定 MySQL 数据库初始化表，不自动创建数据库或用户；重启 Node 服务不清空数据。数据库连接失败会阻止启动；`GET /api/account/health` 也会实际检查数据库连接。不再使用 `DB_FILE`，也不会自动读取旧 SQLite 文件。旧数据迁移见下文。
 
 注册成功后直接进入个人档案并自动同步，不再生成或要求保存恢复码。目前不提供自助找回密码功能，建议使用密码管理器保存账号密码。
 
@@ -41,22 +51,38 @@ npm start
 
 ## 部署与“云端”说明
 
-**代码写好不代表云端已经上线。** 必须把 Node 服务部署到支持长期进程和持久磁盘的服务器，并使用 HTTPS。SQLite 数据文件位于该服务器的持久磁盘后，才是所有设备共用的服务端数据库。
+**代码写好不代表云端已经上线。** 需要将 Node 服务部署到服务器或 Serverless 平台，配置 HTTPS，并连接持久化的 MySQL。比赛演示可使用阿里云函数计算 FC + 云 MySQL，不必自己维护虚拟机；也可以沿用服务器。不要为测试直接购买资源，先确认预算和已有资源。
+
+### 阿里云 FC + 云 MySQL
+
+已提供整站自定义容器的 `Dockerfile`、构建白名单 `.dockerignore` 和环境变量模板 `deploy/fc/.env.example`，步骤见 `docs/fc-deployment.md`。该方案把网页和账号 API 放在同一个 HTTPS 域名，不改动原 WorkBuddy 后台。
+
+容器默认监听 `0.0.0.0:9000`，每实例最多 2 个数据库连接，且不在冷启动时建表。先由管理员在私网环境执行 `npm run db:init`，再使用仅有业务读写权限的账号启动函数。FC 的临时文件系统不存账号数据，也不能作为备份存储。
+
+这只是部署准备，不代表已经创建函数、购买数据库或得到公开链接。FC 默认测试域名可能将 HTML 作为附件下载；比赛网页入口应另行核实并配置 HTTPS 自定义域名。详细费用和域名要求在创建资源前确认。
+
+### 自管服务器
 
 推荐将此服务及现有静态文件一起部署，同一个域名同时提供网站和 `/api/account/*`。生产环境配置示例：
 
 ```dotenv
-HOST=0.0.0.0
+HOST=127.0.0.1
 PORT=3000
 PUBLIC_ORIGIN=https://your-domain.example
-DB_FILE=/persistent-data/shanhe.sqlite
 NODE_ENV=production
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DATABASE=shanhe
+MYSQL_USER=shanhe
+MYSQL_PASSWORD=replace-with-a-strong-database-password
+MYSQL_SSL=false
 ```
 
 - 由反向代理终止 HTTPS，将请求转发到 Node 服务；`PUBLIC_ORIGIN` 必须与浏览器地址完全一致。
 - 只开放 HTTPS 代理，不把内部 Node 端口直接暴露到公网。
-- `DB_FILE` 必须指向持久卷，不能放在每次部署会清空的临时文件系统。
-- 当前设计为单实例 SQLite，不支持多个 Node 实例各持一份数据库或通过网络共享 SQLite 文件。
+- MySQL 的数据目录必须位于持久磁盘，并做好备份；不要向公网开放 3306。
+- 远程云数据库按供应商要求启用 `MYSQL_SSL=true`；需要自定义 CA 时配置 `MYSQL_SSL_CA=/安全路径/ca.pem`。始终验证证书，不提供跳过校验选项。同机 loopback 连接可使用 `MYSQL_SSL=false`。
+- 当前应用的限流保存在单进程内存，仍按单个 Node 实例部署；不是完整的多实例高可用方案。FC 初期也限制最多 1 个实例，公网开放前在可信入口补充分布式限流。
 - 限流按直连来源 IP 和账号生效，不信任客户端伪造的转发头。经过单一反向代理时 IP 限额为代理共享；正式开放前需在可信代理上配置限流并评估容量。
 - 本仓库没有自动推送、部署、云资源创建或线上数据库迁移步骤。
 
@@ -74,9 +100,26 @@ GitHub Pages 继续作为游客版入口。账号功能**不跨域发送 Cookie*
 npm run backup
 ```
 
-使用 SQLite 在线备份 API 输出到 `backups/`，不是直接复制正在写入的单个 `.sqlite` 文件。备份含密码哈希、会话及个人数据，需要与数据库同等级保护，并另存到安全位置。
+通过 InnoDB 一致性快照将账号与进度输出到 `backups/*.json`，文件权限为 0600。备份包含密码哈希和个人数据，不包含会话、恢复码或原 WorkBuddy 数据；必须保护好备份并另存到安全位置。它是本服务的应用数据备份，不替代云数据库自身的灾备策略。
 
-恢复先在测试环境验证：停止目标服务，将备份复制到一个**新的数据库路径**，修改 `DB_FILE` 指向它再启动。不要覆盖正在打开的数据库或混用旧的 WAL/SHM 文件。历史备份可能带回旧会话；正式灾难恢复需评估并作废旧会话，不能只验证页面打开成功。
+恢复先在测试环境验证：停止目标 Node 服务，新建空 MySQL 数据库并配置 `.env`，然后执行：
+
+```sh
+npm run restore -- /绝对路径/备份.json
+```
+
+目标账号、进度、会话表必须全部为空，否则拒绝；所有导入在同一事务内完成，失败回滚，不覆盖已有数据。完成后启动服务，用户需重新登录。不要在服务运行或其他写入程序连接时执行恢复。
+
+### 从旧 SQLite 迁移
+
+保留原文件并先备份；停止旧服务和目标服务，将 `.env` 指向新建的空 MySQL 数据库，再执行：
+
+```sh
+npm run migrate:sqlite -- /绝对路径/data/shanhe.sqlite
+npm start
+```
+
+只读打开指定旧库，保留账号 ID、账号名、昵称、密码哈希与进度，跳过旧会话和恢复码；原 SQLite 文件不改动。迁移后原密码仍可登录，不能只修改环境变量就认为旧数据已迁入。仅迁移工具使用 Node 内置 SQLite，可能输出实验性 API 提示。
 
 ## 当前边界
 
@@ -93,7 +136,7 @@ npm run backup
 
 ```text
 account/       可维护的账号面板、启动适配和同步逻辑
-server/        个人账号 HTTP 服务、SQLite 结构、备份工具
+server/        个人账号 HTTP 服务、MySQL 结构、备份恢复及迁移工具
 assets/        原网站构建产物，含答题结束边界修复
 docs/          原站盘点与新增 API 说明
 ```

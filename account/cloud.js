@@ -1,8 +1,8 @@
-import { accountSite } from './config.js';
+import { accountSite, accountApi } from './config.js';
 
 const keys = {
   visited: 'shw.visited.v1', favorites: 'shw.fav.v1', quiz: 'shw.quiz.v1',
-  lastNode: 'shw.last-node.v1', owner: 'shw.cloud.owner.v1', guest: 'shw.guest.backup.v1'
+  lastNode: 'shw.last-node.v1', owner: 'shw.cloud.owner.v1', guest: 'shw.guest.backup.v1', token: 'shw.token.v1'
 };
 const nodePattern = /^evt-(0[1-9]|1[0-5])$/;
 const quizPattern = /^q(0[1-9]|1[0-5])$/;
@@ -61,10 +61,12 @@ function withAccountLock(callback) {
 async function request(path, method = 'GET', body) {
   let response;
   try {
-    response = await fetch(`/api/account${path}`, {
-      method, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
-      headers: { 'Content-Type': 'application/json', 'X-SHW-Client': 'account-v1' },
-      ...(body ? { body: JSON.stringify(body) } : {})
+    const headers = { 'Content-Type': 'application/json', 'X-SHW-Client': 'account-v1' };
+    const token = readStored(keys.token, null);
+    if (token) headers.Authorization = `Bearer ${token}`;
+    response = await fetch(`${accountApi}/api/account${path}`, {
+      method, credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(8000),
+      headers, ...(body ? { body: JSON.stringify(body) } : {})
     });
   } catch {
     throw Object.assign(new Error('暂时无法连接，记录保留在本机，联网后会自动同步。'), { status: 0 });
@@ -209,6 +211,7 @@ export async function initializeAccount() {
     } catch (error) {
       if (error.status === 401) {
         const hadAccount = !!readStored(keys.owner, null);
+        localStorage.removeItem(keys.token);
         becomeGuest();
         available = true;
         notice(hadAccount ? '登录已过期，重新登录后将自动同步。' : '登录后，足迹将自动同步。');
@@ -292,6 +295,7 @@ export async function initializeAccount() {
         await withAccountLock(async () => {
           const result = await request(`/${action}`, 'POST', credentials);
           adopt(result);
+          if (result.token) localStorage.setItem(keys.token, result.token);
         });
         element('password').value = '';
         notice('正在自动同步…');
@@ -311,6 +315,7 @@ export async function initializeAccount() {
       try {
         await withAccountLock(async () => {
           await request('/logout', 'POST', {});
+          localStorage.removeItem(keys.token);
           becomeGuest();
         });
         notice('已退出账号，登录后足迹将自动同步。');

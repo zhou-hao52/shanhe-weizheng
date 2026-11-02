@@ -1,16 +1,29 @@
-import { DatabaseSync, backup } from 'node:sqlite';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { openDatabase } from './store.mjs';
 
 process.umask(0o077);
-const source = resolve(process.env.DB_FILE || './data/shanhe.sqlite');
-if (!existsSync(source)) throw new Error('数据库不存在，请先启动服务。');
-mkdirSync('backups', { recursive: true, mode: 0o700 });
-const destination = resolve('backups', `shanhe-${new Date().toISOString().replaceAll(':', '-')}.sqlite`);
-const database = new DatabaseSync(source, { readOnly: true });
+const database = await openDatabase();
 try {
-  await backup(database, destination);
-  console.log(`备份完成：${destination}`);
+  const connection = await database.getConnection();
+  let snapshot;
+  try {
+    await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    const [users] = await connection.execute('SELECT id, username, nickname, password_hash, created_at FROM users ORDER BY id');
+    const [progress] = await connection.execute('SELECT * FROM progress ORDER BY user_id');
+    snapshot = { format: 'shanhe-accounts', version: 1, createdAt: new Date().toISOString(), users, progress };
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+  mkdirSync('backups', { recursive: true, mode: 0o700 });
+  const destination = resolve('backups', `shanhe-${new Date().toISOString().replaceAll(':', '-')}.json`);
+  writeFileSync(destination, JSON.stringify(snapshot, null, 2), { mode: 0o600, flag: 'wx' });
+  console.log(`备份完成（不含会话）：${destination}`);
 } finally {
-  database.close();
+  await database.end();
 }

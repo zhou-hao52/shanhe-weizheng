@@ -1,5 +1,7 @@
 # 山河为证 · 重走长征路
 
+独立仓库网页入口：`https://hao2530.github.io/shanhe-weizheng/`。本副本使用 GitHub Pages 展示原网页、阿里云 FC 提供账号 API、RDS MySQL 保存个人记录；新域名的后端来源白名单及跨设备验收见 `docs/published-site.md`。
+
 基于静态网站新增独立的个人账号与学习档案服务，已整合远程提交 `20cce21874d8daa52a7ec8e43ce7e9ad50827888` 的页面更新。
 
 ## 已实现

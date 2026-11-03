@@ -20,7 +20,7 @@
 | PUT | `/progress` | `expectedUserId, revision, progress` | 按版本保存，返回新进度 |
 | POST | `/import` | `expectedUserId, revision, confirmed: true, progress` | 合并游客数组，保留云端已有最近节点；返回新进度 |
 
-`username` 为 3～24 位 ASCII 字母、数字或下划线，统一转小写。密码至少 15 个字符、最多 128 个 UTF-16 代码单元；昵称为 1～24 个 Unicode 码点。注册后直接登录并自动同步，不提供自助找回密码功能。
+`username` 为 3～24 位 ASCII 字母、数字或下划线，统一转小写。密码至少 6 个字符、最多 128 个 UTF-16 代码单元；昵称为 1～24 个 Unicode 码点。注册后直接登录并自动同步，不提供自助找回密码功能。
 
 ## 进度格式
 

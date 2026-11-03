@@ -17,8 +17,8 @@ export const randomSecret = () => randomBytes(32).toString('base64url');
 export const digest = value => createHash('sha256').update(value).digest('hex');
 
 export function validatePassword(password) {
-  if (typeof password !== 'string' || [...password].length < 15 || password.length > 128) {
-    throw new HttpError(400, '密码需要 15～128 个字符，可以使用较长的短语。');
+  if (typeof password !== 'string' || [...password].length < 6 || password.length > 128) {
+    throw new HttpError(400, '密码需要 6～128 个字符。');
   }
 }
 

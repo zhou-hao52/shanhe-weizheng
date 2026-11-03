@@ -246,8 +246,7 @@ export async function initializeAccount() {
           <form id="auth-form">
             <label>账号<input id="username" name="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,24}" minlength="3" maxlength="24" required placeholder="3～24 位字母、数字或下划线"></label>
             <label id="nickname-label" hidden>昵称<input id="nickname" name="nickname" autocomplete="nickname" maxlength="24" placeholder="如何称呼你"></label>
-            <label id="password-label"><span id="password-title">密码</span><input id="password" name="password" type="password" autocomplete="current-password" minlength="15" maxlength="128" required placeholder="15～128 个字符，建议使用长短语"></label>
-            <p class="fine">登录后自动保存足迹，换设备也能继续探索。</p>
+            <label id="password-label"><span id="password-title">密码</span><input id="password" name="password" type="password" autocomplete="current-password" minlength="6" maxlength="128" required placeholder="6～128 个字符"></label>
             <button class="primary" id="submit" type="submit">登录并继续</button>
           </form>
         </section>

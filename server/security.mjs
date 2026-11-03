@@ -6,9 +6,10 @@ const cost = { N: 131072, r: 8, p: 1, maxmem: 160 * 1024 * 1024 };
 let activeHashes = 0;
 
 export class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, { retryAfter } = {}) {
     super(message);
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -22,7 +23,7 @@ export function validatePassword(password) {
 }
 
 async function passwordKey(password, salt) {
-  if (activeHashes >= 2) throw new HttpError(503, '登录服务繁忙，请稍后再试。');
+  if (activeHashes >= 2) throw new HttpError(503, '登录服务繁忙，请稍后再试。', { retryAfter: 1 });
   activeHashes += 1;
   try {
     return await deriveKey(password, salt, 64, cost);
@@ -54,11 +55,13 @@ export function createLimiter() {
     }
     let bucket = buckets.get(key);
     if (!bucket) {
-      if (buckets.size >= 10000) throw new HttpError(503, '服务繁忙，请稍后再试。');
+      if (buckets.size >= 10000) throw new HttpError(503, '服务繁忙，请稍后再试。', { retryAfter: 60 });
       bucket = { count: 0, expiresAt: now + windowMs };
       buckets.set(key, bucket);
     }
     bucket.count += 1;
-    if (bucket.count > maximum) throw new HttpError(429, '操作过于频繁，请稍后再试。');
+    if (bucket.count > maximum) throw new HttpError(429, '操作过于频繁，请稍后再试。', {
+      retryAfter: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000))
+    });
   };
 }

@@ -26,5 +26,13 @@ ALLOWED_ORIGINS=https://zhou-hao52.github.io
 2. 确认已发布的 `account/config.js` 包含 FC 地址。从原网页发起账号接口的预检，响应应含 `Access-Control-Allow-Origin: https://zhou-hao52.github.io`。
 3. 在网页注册账号，收藏一站并等待自动同步。
 4. 在另一台设备登录同一账号，确认收藏与到访恢复。
+5. 检查 API 的 `/api/account/live`（进程存活）和 `/api/account/health`（数据库可用）均返回 200。数据库故障模拟只在隔离测试库执行，不在验收用 RDS 上停库。
 
 FC 默认地址只作为 API 使用，不作为网页分享入口。`docs/fc-deployment.md` 中的同源容器部署是另一种部署方式，不是此 Pages 跨域发布方案。
+
+## 本轮验证记录（2026-11-04）
+
+- 隔离的本机 MySQL 9.4.0 上通过 10 组集成检查：健康检查与 CORS、注册与重复账号、多设备会话与进度冲突、账号隔离与输入验证、单设备退出、注册失败整体回滚、回滚失败保留原异常、停库后的安全 503、重启后的会话与记录持久化、限流等待时间与存活检查。
+- 故障注入及停库仅针对临时测试库，不操作现有 RDS，不代表已在生产 MySQL 版本上执行相同测试。
+- 线上只读检查：现有 `/api/account/health` 返回 200；新增 `/api/account/live` 返回 401，说明本轮新增存活接口尚未部署。原站接入 PR #1 仍未合并。
+- `dist/shanhe-fc.zip` 已重新打包；将该包上传并发布 FC 时保留原有环境变量，之后重新检查 `/live`、`/health`、原站 CORS 和跨设备登录同步。Git 推送不等于 FC 已更新。

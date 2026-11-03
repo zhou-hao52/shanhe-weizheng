@@ -3,6 +3,16 @@ import { readFileSync } from 'node:fs';
 import { databaseConfig } from './database-config.mjs';
 import { HttpError } from './security.mjs';
 
+const temporaryDatabaseCodes = new Set([
+  'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'EAI_AGAIN',
+  'PROTOCOL_CONNECTION_LOST', 'PROTOCOL_SEQUENCE_TIMEOUT', 'ER_SERVER_SHUTDOWN',
+  'ER_CON_COUNT_ERROR', 'ER_TOO_MANY_USER_CONNECTIONS', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'
+]);
+
+export function isTemporaryDatabaseError(error) {
+  return temporaryDatabaseCodes.has(error.code) || (!error.code && error.message === 'Queue limit reached.');
+}
+
 export async function openDatabase(options = databaseConfig()) {
   const { autoInitialize = true, ...connectionOptions } = options;
   const database = mysql.createPool({
@@ -53,7 +63,11 @@ export async function transaction(database, callback) {
     await connection.commit();
     return result;
   } catch (error) {
-    await connection.rollback();
+    try {
+      await connection.rollback();
+    } catch {
+      connection.destroy();
+    }
     throw error;
   } finally {
     connection.release();

@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { openDatabase, queryOne, readProgress, normalizeProgress, saveProgress, transaction } from './store.mjs';
+import { openDatabase, queryOne, readProgress, normalizeProgress, saveProgress, transaction, isTemporaryDatabaseError } from './store.mjs';
 import { HttpError, randomSecret, digest, hashPassword, verifyPassword, validatePassword, createLimiter } from './security.mjs';
 
 const rootDirectory = fileURLToPath(new URL('../', import.meta.url));
@@ -60,6 +60,7 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
   const allowed = (allowedOrigins.length ? allowedOrigins : [publicOrigin]).map(value => {
     const parsed = new URL(value);
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== value) throw new Error('ALLOWED_ORIGINS 必须是完整 origin 列表，不能含路径或末尾斜线。');
+    if (production && parsed.protocol !== 'https:') throw new Error('生产环境来源白名单必须使用 HTTPS。');
     return parsed.origin;
   });
   const limit = createLimiter();
@@ -68,10 +69,11 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
   const database = await openDatabase(databaseOptions);
 
   function applyCors(request, response) {
+    response.setHeader('Vary', 'Origin');
     const origin = request.headers.origin;
     if (origin && allowed.includes(origin)) {
       response.setHeader('Access-Control-Allow-Origin', origin);
-      response.setHeader('Vary', 'Origin');
+      response.setHeader('Access-Control-Expose-Headers', 'Retry-After');
       response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-SHW-Client, Authorization');
       response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       response.setHeader('Access-Control-Max-Age', '600');
@@ -87,6 +89,7 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
 
   async function authenticated(request) {
     const token = tokenFrom(request);
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(401, '请先登录，或重新登录已过期的账号。');
     const user = await queryOne(database, `
       SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = ? AND sessions.expires_at > ?
@@ -95,22 +98,22 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
     return user;
   }
 
-  async function issueSession(request, userId) {
+  async function issueSession(connection, request, userId) {
     const token = randomSecret();
-    await transaction(database, async connection => {
-      await connection.execute('DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?', [digest(tokenFrom(request)), Date.now()]);
-      await connection.execute('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [digest(token), userId, Date.now() + sessionLifetime]);
-    });
-    return { token, expiresAt: Date.now() + sessionLifetime };
+    const expiresAt = Date.now() + sessionLifetime;
+    await connection.execute('DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?', [digest(tokenFrom(request)), Date.now()]);
+    await connection.execute('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [digest(token), userId, expiresAt]);
+    return { token, expiresAt };
   }
 
-  async function accountState(user) {
-    return { user: publicUser(user), progress: await readProgress(database, user.id) };
+  async function accountState(user, connection = database) {
+    return { user: publicUser(user), progress: await readProgress(connection, user.id) };
   }
 
   async function api(request, response, pathname) {
     const method = request.method;
     const remote = request.socket.remoteAddress || 'unknown';
+    if (pathname === `${apiPrefix}/live` && method === 'GET') return { service: 'shanhe-accounts', status: 'alive' };
     limit(`api:${remote}`, 300, 60000);
     if (!['GET', 'POST', 'PUT', 'PATCH'].includes(method)) throw new HttpError(405, '不支持此请求方法。');
     if (method !== 'GET') {
@@ -134,28 +137,33 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
         const passwordHash = await hashPassword(body.password);
         const userId = randomUUID();
         const createdAt = new Date().toISOString();
+        let state;
         try {
-          await transaction(database, async connection => {
+          state = await transaction(database, async connection => {
             await connection.execute('INSERT INTO users (id, username, nickname, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
               [userId, username, nickname, passwordHash, createdAt]);
             await connection.execute('INSERT INTO progress (user_id, visited_json, favorites_json, quiz_json, updated_at) VALUES (?, ?, ?, ?, ?)',
               [userId, '[]', '[]', '[]', createdAt]);
+            const session = await issueSession(connection, request, userId);
+            const user = { id: userId, username, nickname, created_at: createdAt };
+            return { ...(await accountState(user, connection)), ...session };
           });
         } catch (error) {
           if (error.code === 'ER_DUP_ENTRY') throw new HttpError(409, '账号无法注册，请更换账号名称或尝试登录。');
           throw error;
         }
-        const session = await issueSession(request, userId);
         response.statusCode = 201;
-        return { ...(await accountState(await queryOne(database, 'SELECT * FROM users WHERE id = ?', [userId]))), ...session };
+        return state;
       }
       const user = await queryOne(database, 'SELECT * FROM users WHERE username = ?', [username]);
       const valid = await verifyPassword(body.password, user?.password_hash || dummyPassword);
       if (!user || !valid) throw new HttpError(401, '账号或密码不正确。');
-      const current = await queryOne(database, 'SELECT * FROM users WHERE id = ?', [user.id]);
-      if (!current || current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
-      const session = await issueSession(request, user.id);
-      return { ...(await accountState(current)), ...session };
+      return transaction(database, async connection => {
+        const current = await queryOne(connection, 'SELECT * FROM users WHERE id = ? FOR UPDATE', [user.id]);
+        if (!current || current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
+        const session = await issueSession(connection, request, user.id);
+        return { ...(await accountState(current, connection)), ...session };
+      });
     }
     const user = await authenticated(request);
     if (pathname === `${apiPrefix}/me` && method === 'GET') return accountState(user);
@@ -246,10 +254,13 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
       }
     } catch (error) {
       if (response.headersSent || response.destroyed) return;
-      const status = error instanceof HttpError ? error.status : 500;
+      const failure = !(error instanceof HttpError) && isTemporaryDatabaseError(error)
+        ? new HttpError(503, '数据库暂时不可用，请稍后重新读取云端数据确认状态。', { retryAfter: 3 })
+        : error;
+      const status = failure instanceof HttpError ? failure.status : 500;
       if (status === 500) console.error('Request failed:', error.code || error.name);
-      response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(status === 429 ? { 'Retry-After': '900' } : {}) });
-      response.end(JSON.stringify({ code: status, message: status === 500 ? '服务暂时不可用，请稍后重试。' : error.message }));
+      response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(failure.retryAfter ? { 'Retry-After': String(failure.retryAfter) } : {}) });
+      response.end(JSON.stringify({ code: status, message: status === 500 ? '服务暂时不可用，请稍后重试。' : failure.message }));
     }
   });
   server.requestTimeout = 15000;

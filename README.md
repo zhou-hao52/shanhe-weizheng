@@ -10,7 +10,8 @@
 - MySQL 持久化个人到访、收藏、题目学习标记、最近浏览节点。
 - 页面右下方“我的足迹”：个人数量统计、继续探索、收藏列表和自动同步状态。
 - 登录时自动合并当前游客记录；登录后自动同步，换设备登录自动读取，无需手动导入或恢复。
-- 账号隔离、同步版本冲突检测、密码哈希、HttpOnly 会话、请求来源校验和基础限流。
+- 账号隔离、同步版本冲突检测、密码哈希、Bearer 会话、请求来源校验和基础限流。
+- 注册账号、进度和会话的原子事务；进程存活与数据库健康检查、数据库临时故障的安全 503 响应。
 - 账号数据在线备份、空库恢复和旧 SQLite 数据迁移命令。
 
 账号模块在原主程序之外实现：加载前恢复本机档案，随后使用原页面已有的本地存储键检测变化。原主程序增加了 `shw:progress-updated` 事件桥接，云端变化可直接更新页面而不刷新答题过程；另有答题结束边界修复，详见 `docs/quiz-completion-fix.md`。原 WorkBuddy 留言、访问统计和管理员后台保持原逻辑，和本服务分开，不共享账号或数据库。
@@ -90,9 +91,11 @@ MYSQL_SSL=false
 
 ### 保留 GitHub Pages
 
-GitHub Pages 继续作为游客版入口。账号功能**不跨域发送 Cookie**，不默认把会话令牌写入本地存储。
+GitHub Pages 作为团队原网页入口，账号功能通过 HTTPS 跨域调用 FC API，不要求普通用户配置环境或跳转到另一个网站。
 
-部署完独立账号网站后，将 `account/config.js` 的 `accountSite` 设置为其 HTTPS origin。GitHub Pages 上会显示“前往账号服务网站”，用户在后端网站完成登录并继续浏览。两个域名的游客本机记录互不相通，不会自动迁移。
+`account/config.js` 中的 `accountApi` 指向 FC 地址，`accountSite` 为团队原站 origin。FC 的 `ALLOWED_ORIGINS` 必须允许团队原站，不能设为 `*`。当前认证是 localStorage 中的 Bearer token，不是 HttpOnly Cookie；令牌会受 XSS 影响，应严格保护网页脚本来源。
+
+网页与 API 分别发布：部署分支的改动合入原仓库 `main` 并完成 Pages 构建后才会更新原站；后端修复还需单独上传 FC 代码包。完整步骤见 `docs/published-site.md`。
 
 不要把后端管理密钥、数据库文件、`.env` 或账号密码提交到 Git；`.gitignore` 已排除默认数据目录和环境文件。
 

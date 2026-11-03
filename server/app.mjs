@@ -147,7 +147,7 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
         }
         const session = await issueSession(request, userId);
         response.statusCode = 201;
-        return { ...accountState(await queryOne(database, 'SELECT * FROM users WHERE id = ?', [userId])), ...session };
+        return { ...(await accountState(await queryOne(database, 'SELECT * FROM users WHERE id = ?', [userId]))), ...session };
       }
       const user = await queryOne(database, 'SELECT * FROM users WHERE username = ?', [username]);
       const valid = await verifyPassword(body.password, user?.password_hash || dummyPassword);
@@ -155,7 +155,7 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
       const current = await queryOne(database, 'SELECT * FROM users WHERE id = ?', [user.id]);
       if (!current || current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
       const session = await issueSession(request, user.id);
-      return { ...accountState(current), ...session };
+      return { ...(await accountState(current)), ...session };
     }
     const user = await authenticated(request);
     if (pathname === `${apiPrefix}/me` && method === 'GET') return accountState(user);
@@ -197,23 +197,20 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
   async function serveStatic(request, response, url) {
     if (!['GET', 'HEAD'].includes(request.method)) throw new HttpError(405, '不支持此请求方法。');
     if (url.pathname === '/' || url.pathname === '/shanhe-weizheng') {
-      response.writeHead(302, { Location: `${basePath}${url.search}` });
-      response.end();
-      return;
+      url = new URL(`${basePath}${url.search}`, url);
     }
     if (!url.pathname.startsWith(basePath)) throw new HttpError(404, '页面不存在。');
     let pathname;
     try { pathname = decodeURIComponent(url.pathname.slice(basePath.length)); } catch { throw new HttpError(400, '路径无效。'); }
     if (pathname.includes('\\') || pathname.split('/').some(part => part.startsWith('.'))) throw new HttpError(404, '页面不存在。');
-    if (!pathname || pathname.endsWith('/')) pathname += 'index.html';
+    if (/^(about|admin|archive|figures|quiz|route|archive\/evt-(?:0[1-9]|1[0-5]))$/.test(pathname)) {
+      pathname += '/index.html';
+    } else if (!pathname || pathname.endsWith('/')) {
+      pathname += 'index.html';
+    }
     const allowedPage = /^(index\.html|404\.html|(?:about|admin|archive|figures|quiz|route)\/index\.html|archive\/evt-(?:0[1-9]|1[0-5])\/index\.html)$/;
     const allowedAsset = /^(?:assets|art|fonts|account)\/[A-Za-z0-9_-]+\.(?:js|css|webp|woff2|svg)$/;
     if (!allowedPage.test(pathname) && !allowedAsset.test(pathname)) {
-      if (/^(about|admin|archive|figures|quiz|route|archive\/evt-(0[1-9]|1[0-5]))$/.test(pathname)) {
-        response.writeHead(302, { Location: `${basePath}${pathname}/${url.search}` });
-        response.end();
-        return;
-      }
       throw new HttpError(404, '页面不存在。');
     }
     let filename;

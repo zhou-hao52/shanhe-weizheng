@@ -62,7 +62,7 @@ async function request(path, method = 'GET', body) {
   let response;
   try {
     const headers = { 'Content-Type': 'application/json', 'X-SHW-Client': 'account-v1' };
-    const token = readStored(keys.token, null);
+    const token = localStorage.getItem(keys.token);
     if (token) headers.Authorization = `Bearer ${token}`;
     response = await fetch(`${accountApi}/api/account${path}`, {
       method, credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(8000),

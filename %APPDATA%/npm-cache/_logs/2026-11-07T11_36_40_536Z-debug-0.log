@@ -1,0 +1,75 @@
+0 verbose cli C:\Users\LENOVO\.workbuddy\binaries\node\versions\22.22.2-6\node.exe C:\Users\LENOVO\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.14.1
+2 info using node@v22.22.2
+3 silly config load:file:C:\Users\LENOVO\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\LENOVO\AppData\Local\Temp\shanhe-fc-kaiXuP\app\.npmrc
+5 silly config load:file:C:\Users\LENOVO\.npmrc
+6 silly config load:file:C:\Users\LENOVO\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm ci
+8 verbose argv "ci" "--omit" "dev" "--ignore-scripts" "--no-audit" "--no-fund"
+9 verbose logfile logs-max:10 dir:D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo\%APPDATA%\npm-cache\_logs\2026-11-07T11_36_40_536Z-
+10 verbose logfile D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo\%APPDATA%\npm-cache\_logs\2026-11-07T11_36_40_536Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+14 silly idealTree buildDeps
+15 warn EBADENGINE Unsupported engine {
+15 warn EBADENGINE   package: 'shanhe-weizheng@0.1.0',
+15 warn EBADENGINE   required: { node: '>=24.0.0 <25' },
+15 warn EBADENGINE   current: { node: 'v22.22.2', npm: '11.14.1' }
+15 warn EBADENGINE }
+16 silly reify moves {}
+17 http cache sql-escaper@https://registry.npmmirror.com/sql-escaper/-/sql-escaper-1.5.2.tgz 1ms (cache hit)
+18 http cache named-placeholders@https://registry.npmmirror.com/named-placeholders/-/named-placeholders-1.1.6.tgz 0ms (cache hit)
+19 http cache undici-types@https://registry.npmmirror.com/undici-types/-/undici-types-8.9.0.tgz 0ms (cache hit)
+20 http cache safer-buffer@https://registry.npmmirror.com/safer-buffer/-/safer-buffer-2.1.2.tgz 0ms (cache hit)
+21 http cache mysql2@https://registry.npmmirror.com/mysql2/-/mysql2-3.24.6.tgz 0ms (cache hit)
+22 http cache long@https://registry.npmmirror.com/long/-/long-5.3.2.tgz 0ms (cache hit)
+23 http cache lru.min@https://registry.npmmirror.com/lru.min/-/lru.min-1.1.5.tgz 0ms (cache hit)
+24 http cache is-property@https://registry.npmmirror.com/is-property/-/is-property-1.0.2.tgz 0ms (cache hit)
+25 http cache @types/node@https://registry.npmmirror.com/@types/node/-/node-26.6.6.tgz 0ms (cache hit)
+26 silly tarball no local data for sql-escaper@https://registry.npmmirror.com/sql-escaper/-/sql-escaper-1.5.2.tgz. Extracting by manifest.
+27 silly tarball no local data for named-placeholders@https://registry.npmmirror.com/named-placeholders/-/named-placeholders-1.1.6.tgz. Extracting by manifest.
+28 silly tarball no local data for undici-types@https://registry.npmmirror.com/undici-types/-/undici-types-8.9.0.tgz. Extracting by manifest.
+29 silly tarball no local data for safer-buffer@https://registry.npmmirror.com/safer-buffer/-/safer-buffer-2.1.2.tgz. Extracting by manifest.
+30 silly tarball no local data for mysql2@https://registry.npmmirror.com/mysql2/-/mysql2-3.24.6.tgz. Extracting by manifest.
+31 silly tarball no local data for long@https://registry.npmmirror.com/long/-/long-5.3.2.tgz. Extracting by manifest.
+32 silly tarball no local data for lru.min@https://registry.npmmirror.com/lru.min/-/lru.min-1.1.5.tgz. Extracting by manifest.
+33 silly tarball no local data for is-property@https://registry.npmmirror.com/is-property/-/is-property-1.0.2.tgz. Extracting by manifest.
+34 http cache iconv-lite@https://registry.npmmirror.com/iconv-lite/-/iconv-lite-0.7.3.tgz 0ms (cache hit)
+35 silly tarball no local data for @types/node@https://registry.npmmirror.com/@types/node/-/node-26.6.6.tgz. Extracting by manifest.
+36 http cache generate-function@https://registry.npmmirror.com/generate-function/-/generate-function-2.3.1.tgz 0ms (cache hit)
+37 http cache aws-ssl-profiles@https://registry.npmmirror.com/aws-ssl-profiles/-/aws-ssl-profiles-1.1.2.tgz 0ms (cache hit)
+38 silly tarball no local data for iconv-lite@https://registry.npmmirror.com/iconv-lite/-/iconv-lite-0.7.3.tgz. Extracting by manifest.
+39 silly tarball no local data for generate-function@https://registry.npmmirror.com/generate-function/-/generate-function-2.3.1.tgz. Extracting by manifest.
+40 silly tarball no local data for aws-ssl-profiles@https://registry.npmmirror.com/aws-ssl-profiles/-/aws-ssl-profiles-1.1.2.tgz. Extracting by manifest.
+41 http fetch GET 200 https://cdn.npmmirror.com/packages/generate-function/2.3.1/generate-function-2.3.1.tgz 596ms (cache miss)
+42 http fetch GET 200 https://cdn.npmmirror.com/packages/is-property/1.0.2/is-property-1.0.2.tgz 652ms (cache miss)
+43 http fetch GET 200 https://cdn.npmmirror.com/packages/named-placeholders/1.1.6/named-placeholders-1.1.6.tgz 660ms (cache miss)
+44 http fetch GET 200 https://cdn.npmmirror.com/packages/lru.min/1.1.5/lru.min-1.1.5.tgz 656ms (cache miss)
+45 http fetch GET 200 https://cdn.npmmirror.com/packages/safer-buffer/2.1.2/safer-buffer-2.1.2.tgz 662ms (cache miss)
+46 http fetch GET 200 https://cdn.npmmirror.com/packages/sql-escaper/1.5.2/sql-escaper-1.5.2.tgz 702ms (cache miss)
+47 http fetch GET 200 https://cdn.npmmirror.com/packages/long/5.3.2/long-5.3.2.tgz 709ms (cache miss)
+48 http fetch GET 200 https://cdn.npmmirror.com/packages/aws-ssl-profiles/1.1.2/aws-ssl-profiles-1.1.2.tgz 693ms (cache miss)
+49 http fetch GET 200 https://cdn.npmmirror.com/packages/undici-types/8.9.0/undici-types-8.9.0.tgz 850ms (cache miss)
+50 http fetch GET 200 https://cdn.npmmirror.com/packages/iconv-lite/0.7.3/iconv-lite-0.7.3.tgz 801ms (cache miss)
+51 http fetch GET 200 https://cdn.npmmirror.com/packages/%40types/node/26.6.6/node-26.6.6.tgz 1292ms (cache miss)
+52 http fetch GET 200 https://cdn.npmmirror.com/packages/mysql2/3.24.6/mysql2-3.24.6.tgz 1937ms (cache miss)
+53 silly ADD node_modules/undici-types
+54 silly ADD node_modules/sql-escaper
+55 silly ADD node_modules/safer-buffer
+56 silly ADD node_modules/named-placeholders
+57 silly ADD node_modules/mysql2
+58 silly ADD node_modules/lru.min
+59 silly ADD node_modules/long
+60 silly ADD node_modules/is-property
+61 silly ADD node_modules/iconv-lite
+62 silly ADD node_modules/generate-function
+63 silly ADD node_modules/aws-ssl-profiles
+64 silly ADD node_modules/@types/node
+65 verbose cwd C:\Users\LENOVO\AppData\Local\Temp\shanhe-fc-kaiXuP\app
+66 verbose os Windows_NT 10.0.26200
+67 verbose node v22.22.2
+68 verbose npm  v11.14.1
+69 verbose exit 0
+70 info ok

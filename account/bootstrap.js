@@ -6,5 +6,5 @@ try {
 } catch (error) {
   console.warn('个人档案暂时不可用，继续以原站点模式浏览。', error.name);
 }
-await import('../assets/index-BSB1D7Be.js');
+await import('../assets/index-BOMbyg8-.js');
 account?.mount();

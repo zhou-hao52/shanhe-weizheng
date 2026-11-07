@@ -1,0 +1,18 @@
+0 verbose cli C:\Users\LENOVO\.workbuddy\binaries\node\versions\22.22.2-6\node.exe C:\Users\LENOVO\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.14.1
+2 info using node@v22.22.2
+3 silly config load:file:C:\Users\LENOVO\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo\.npmrc
+5 silly config load:file:C:\Users\LENOVO\.npmrc
+6 silly config load:file:C:\Users\LENOVO\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm run package:fc
+8 verbose argv "run" "package:fc"
+9 verbose logfile logs-max:10 dir:D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo\%APPDATA%\npm-cache\_logs\2026-11-07T11_36_13_565Z-
+10 verbose logfile D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo\%APPDATA%\npm-cache\_logs\2026-11-07T11_36_13_565Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd D:\OneDrive\Desktop\零杯网页设计大赛\shanhe-weizheng\.deploy\repo
+13 verbose os Windows_NT 10.0.26200
+14 verbose node v22.22.2
+15 verbose npm  v11.14.1
+16 verbose exit 1
+17 verbose code 1

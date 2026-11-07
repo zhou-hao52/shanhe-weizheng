@@ -23,12 +23,13 @@ function run(command, args, options = {}) {
 }
 
 function checkName(name) {
+  const normalized = name.split(/[\\/]/).join('/');
   const allowedPublicCertificates = new Set([
     'server/certs/ApsaraDB-CA-Chain.pem',
   ]);
-  if (allowedPublicCertificates.has(name)) return;
-  if (/^\.env(?:\.|$)|\.(?:sqlite(?:-shm|-wal)?|pem|key|p12|pfx|node)$|[\r\n]/i.test(name)) {
-    throw new Error(`Deployment package refuses sensitive or platform-specific file: ${name}`);
+  if (allowedPublicCertificates.has(normalized)) return;
+  if (/^\.env(?:\.|$)|\.(?:sqlite(?:-shm|-wal)?|pem|key|p12|pfx|node)$|[\r\n]/i.test(normalized)) {
+    throw new Error(`Deployment package refuses sensitive or platform-specific file: ${normalized}`);
   }
 }
 
@@ -68,7 +69,7 @@ try {
   for (const source of sources) await stage(source);
   run(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
     'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
-  ]);
+  ], process.platform === 'win32' ? { shell: true } : {});
   const files = await listFiles(staging);
   const archive = path.join(temporary, 'shanhe-fc.zip');
   run('zip', ['-q', '-X', archive, '-@'], { input: `${files.join('\n')}\n` });

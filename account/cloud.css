@@ -34,5 +34,6 @@ input::placeholder { color: #998c79; font-size: 12px; }
 .favorites { display: flex; flex-wrap: wrap; gap: 8px; }
 .favorites a { border: 1px solid #615038; border-radius: 5px; padding: 4px 10px; font-size: 13px; }
 .logout { display: block; width: 100%; margin-top: 18px; color: #c9ac92; background: transparent; border: 0; font-size: 13px; }
+.profile-link { display: block; margin-top: 14px; font-size: 13px; }
 @media (max-width: 400px) { dialog { padding: 20px 16px; } h2 { font-size: 21px; } .launcher { right: 12px; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }

@@ -94,6 +94,62 @@ export async function initializeAccount() {
   let lastCheck = 0;
   let lastPath;
 
+  // ---------- 只读桥接 ----------
+  // 站点页面（/profile）通过 globalThis.__shwAccount 读取登录态与同步状态。
+  // 只暴露用户可读信息，不含内部用户 ID、令牌、进度版本。
+  const BRIDGE_EVENT = 'shw:account-changed';
+  let pendingOpen = false;
+  let bridgeSnapshot = Object.freeze({
+    version: 1, ready: false, authed: false, username: '', nickname: '', memberSince: null,
+    available, syncing, message, panelReady: false, lastNode: null, updatedAt: null, endpoint: accountApi
+  });
+
+  function bridgeState() {
+    const progress = localProgress();
+    return {
+      version: 1,
+      ready: true,
+      authed: !!state,
+      username: state?.user.username ?? '',
+      nickname: state?.user.nickname ?? '',
+      memberSince: state?.user.createdAt ?? null,
+      available,
+      syncing,
+      message,
+      panelReady: !!panel,
+      lastNode: progress.lastNode,
+      updatedAt: state?.progress.updatedAt ?? null,
+      endpoint: accountApi
+    };
+  }
+
+  function publishBridge() {
+    const next = Object.freeze(bridgeState());
+    if (JSON.stringify(next) === JSON.stringify(bridgeSnapshot)) return;
+    bridgeSnapshot = next;
+    dispatchEvent(new CustomEvent(BRIDGE_EVENT, { detail: next }));
+  }
+
+  function openPanel() {
+    if (!panel) { pendingOpen = true; return false; }
+    showCounts();
+    showAccount();
+    const dialog = element('dialog');
+    if (dialog && !dialog.open) dialog.showModal();
+    return true;
+  }
+
+  globalThis.__shwAccount = {
+    version: 1,
+    getSnapshot: () => bridgeSnapshot,
+    subscribe: listener => {
+      addEventListener(BRIDGE_EVENT, listener);
+      return () => removeEventListener(BRIDGE_EVENT, listener);
+    },
+    open: openPanel,
+    refresh: () => { if (state) sync(true); }
+  };
+
   function retainAccount() {
     const owner = readStored(keys.owner, null);
     if (owner && !sameProgress(localProgress(), owner.baseline)) {
@@ -140,6 +196,7 @@ export async function initializeAccount() {
   function notice(text) {
     message = text;
     if (element('status')) element('status').textContent = text;
+    publishBridge();
   }
 
   function showCounts() {
@@ -170,6 +227,7 @@ export async function initializeAccount() {
       element('account-name').textContent = `账号：${state.user.username}`;
       showCounts();
     }
+    publishBridge();
   }
 
   async function sync(force = false) {
@@ -178,6 +236,7 @@ export async function initializeAccount() {
     const changed = owner && (!sameProgress(localProgress(), owner.baseline) || lastPath !== location.pathname);
     if (!force && !changed && Date.now() - lastCheck < (available ? 15000 : 6000)) return;
     syncing = true;
+    publishBridge();
     try {
       await withAccountLock(async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -186,7 +245,10 @@ export async function initializeAccount() {
           if (lastPath !== location.pathname) {
             lastPath = location.pathname;
             const currentNode = lastPath.match(/\/archive\/(evt-(?:0[1-9]|1[0-5]))\/?$/);
-            if (currentNode) localStorage.setItem(keys.lastNode, JSON.stringify(currentNode[1]));
+            if (currentNode) {
+              localStorage.setItem(keys.lastNode, JSON.stringify(currentNode[1]));
+              publishBridge();
+            }
           }
           const snapshot = localProgress();
           if (sameProgress(snapshot, state.progress)) {
@@ -228,6 +290,7 @@ export async function initializeAccount() {
 
   if (storageAvailable) await sync(true);
   else notice('浏览器禁止本地存储，暂不能安全切换账号；仍可浏览原网站。');
+  publishBridge();
 
   function mount() {
     const host = document.createElement('div');
@@ -255,11 +318,13 @@ export async function initializeAccount() {
           <div class="counts"><div><b id="visited-count">0</b><span>到访 / 15 站</span></div><div><b id="quiz-count">0</b><span>学习 / 15 题</span></div><div><b id="favorites-count">0</b><span>收藏</span></div></div>
           <a id="resume" class="primary" href="/shanhe-weizheng/route/">继续探索 →</a>
           <h3>我的收藏</h3><div id="favorites" class="favorites"></div><p id="empty-favorites" class="fine">在历史档案中点击收藏，这里会记录你的选择。</p>
+          <a id="full-profile" class="profile-link" href="/shanhe-weizheng/profile/">查看完整个人主页 →</a>
           <button id="logout" class="logout">退出账号，返回游客模式</button>
         </section>
       </dialog>`;
     notice(message);
     showAccount();
+    if (pendingOpen) { pendingOpen = false; openPanel(); }
     if (accountSite) {
       try {
         const destination = new URL(accountSite);
@@ -329,6 +394,7 @@ export async function initializeAccount() {
       if (Object.values(keys).includes(event.key) || event.key === null) {
         dispatchEvent(new Event('shw:progress-updated'));
         showCounts();
+        publishBridge();
         if (event.key === keys.owner || event.key === null) sync(true);
       }
     });

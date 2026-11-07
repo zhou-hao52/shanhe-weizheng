@@ -10,6 +10,8 @@ button:hover:not(:disabled), a:hover { border-color: #c6a776; color: #fff5e3; }
 a { color: #e1bd81; text-decoration: none; }
 .launcher { position: fixed; z-index: 1100; bottom: max(88px, calc(env(safe-area-inset-bottom) + 76px)); right: 18px; background: #231c16f5; border-color: #a18457; border-radius: 24px; padding: 10px 18px; box-shadow: 0 4px 24px #0006; font-size: 14px; }
 .launcher span { margin-left: 8px; color: #d7b47d; }
+/* 个人主页自己就是完整档案，页内不再叠一个「我的足迹」浮动入口 */
+:host([data-profile]) .launcher { display: none; }
 dialog { color: inherit; background: #1d1915; border: 1px solid #6a5841; border-radius: 16px; padding: 26px; width: min(540px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow: auto; box-shadow: 0 20px 90px #0008; }
 dialog::backdrop { background: #0c0a09bb; backdrop-filter: blur(5px); }
 header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

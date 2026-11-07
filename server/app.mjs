@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { openDatabase, queryOne, readProgress, normalizeProgress, saveProgress, transaction, isTemporaryDatabaseError } from './store.mjs';
 import { HttpError, randomSecret, digest, hashPassword, verifyPassword, validatePassword, createLimiter } from './security.mjs';
+import { adminApi } from './admin.mjs';
 
 const rootDirectory = fileURLToPath(new URL('../', import.meta.url));
 const sessionLifetime = 7 * 24 * 60 * 60 * 1000;
@@ -125,6 +126,10 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
       await queryOne(database, 'SELECT 1');
       return { service: 'shanhe-accounts', database: 'mysql', schemaVersion: 1 };
     }
+    // 管理接口走独立口令与独立令牌，不进入下面的用户会话校验
+    if (pathname.startsWith(`${apiPrefix}/admin/`)) {
+      return adminApi(database, request, pathname, { limit, remote, readJson });
+    }
     const authPaths = ['register', 'login'].map(action => `${apiPrefix}/${action}`);
     if (authPaths.includes(pathname) && method === 'POST') {
       limit(`auth-ip:${remote}`, 30);
@@ -211,12 +216,12 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
     let pathname;
     try { pathname = decodeURIComponent(url.pathname.slice(basePath.length)); } catch { throw new HttpError(400, '路径无效。'); }
     if (pathname.includes('\\') || pathname.split('/').some(part => part.startsWith('.'))) throw new HttpError(404, '页面不存在。');
-    if (/^(about|admin|archive|figures|quiz|route|archive\/evt-(?:0[1-9]|1[0-5]))$/.test(pathname)) {
+    if (/^(about|admin|archive|figures|quiz|route|profile|archive\/evt-(?:0[1-9]|1[0-5]))$/.test(pathname)) {
       pathname += '/index.html';
     } else if (!pathname || pathname.endsWith('/')) {
       pathname += 'index.html';
     }
-    const allowedPage = /^(index\.html|404\.html|(?:about|admin|archive|figures|quiz|route)\/index\.html|archive\/evt-(?:0[1-9]|1[0-5])\/index\.html)$/;
+    const allowedPage = /^(index\.html|404\.html|(?:about|admin|archive|figures|quiz|route|profile)\/index\.html|archive\/evt-(?:0[1-9]|1[0-5])\/index\.html)$/;
     const allowedAsset = /^(?:assets|art|fonts|account)\/[A-Za-z0-9_-]+\.(?:js|css|webp|woff2|svg)$/;
     if (!allowedPage.test(pathname) && !allowedAsset.test(pathname)) {
       throw new HttpError(404, '页面不存在。');

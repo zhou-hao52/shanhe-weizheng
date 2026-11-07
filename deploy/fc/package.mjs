@@ -10,7 +10,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'shanhe-fc-'));
 const staging = path.join(temporary, 'app');
 const sources = [
   'package.json', 'package-lock.json', 'server', 'account', 'assets', 'art',
-  'fonts', 'about', 'admin', 'archive', 'figures', 'quiz', 'route',
+  'fonts', 'about', 'admin', 'archive', 'figures', 'quiz', 'route', 'profile',
   'index.html', '404.html',
 ];
 

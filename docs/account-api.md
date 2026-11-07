@@ -64,4 +64,35 @@ MySQL InnoDB 表为 `users`、`sessions`、`progress`，`schema_version` 记录�
 
 恢复码和 `/recover` 接口已移除，MySQL 不保存恢复码列。从 SQLite 迁移时保留账号、密码哈希与个人进度，不迁移旧会话及恢复码，用户需重新登录。迁移和备份恢复仅允许空目标数据库，操作前停止目标服务，详见 README。
 
-服务不实现 `/api/admin/*`，个人账号不能作为旧管理后台令牌。没有把之前提供的管理员口令写入配置或代码。
+服务不向用户提供管理能力：个人账号令牌不能访问任何管理接口。另有一套独立口令保护的只读管理接口（见下节），两者互不代签。没有把旧管理后台的口令写入配置或代码。
+
+## 管理接口（`/api/account/admin`）
+
+仅供站内数据看板的「账号」页使用。口令与用户密码体系无关：`ADMIN_PASSWORD_HASH`（`scrypt$N$r$p$salt$key`，用 `server/security.mjs` 的 `hashPassword` 生成）与 `ADMIN_TOKEN_SECRET`（32 字节以上随机串）由部署环境提供，缺任一项时全部返回 503。
+
+| 方法 | 路径 | 请求体 | 结果 |
+| --- | --- | --- | --- |
+| POST | `/login` | `password` | `token, expiresAt`（12 小时） |
+| POST | `/overview` | `token` | 注册总数、近 7 天新增、有进度账号、完成节点/题目/印章数、会话数、最近写入 |
+| POST | `/accounts` | `token, q, sort, order, page, size, hasProgress, session` | 账号列表 |
+| POST | `/account` | `token, username` | 单账号只读详情 |
+| POST | `/sessions/revoke` | `token, username` | 删除该账号全部会话（不影响学习记录） |
+
+约束：
+
+- 响应里不出现 `id`、`password_hash`、`token_hash`；`sort` 只接受白名单键，`order` 只接受 asc/desc，`page/size` 夹取后以整数拼接。
+- 令牌放请求体，不放 `Authorization`；写请求仍需 `Origin` 在 `ALLOWED_ORIGINS` 内且带 `X-SHW-Client: account-v1`。
+- 管理令牌不写 `sessions` 表，用户接口的会话校验看不到它。
+- `sessions` 表没有创建时间，「最近登录」无法计算，因此不提供；`users` 表没有状态字段，列表中的「会话」只表示当前是否持有未过期会话。
+
+## 前端只读桥接（`account/cloud.js`）
+
+`initializeAccount()` 会把只读快照挂到 `globalThis.__shwAccount`：
+
+```js
+{ version, getSnapshot(), subscribe(listener), open(), refresh() }
+```
+
+快照字段仅限用户可见信息：`authed / username / nickname / memberSince / available / syncing / message / panelReady / lastNode / updatedAt / endpoint`，不含用户 ID、令牌与进度版本。变更通过 `shw:account-changed` 事件通知，不派发 `shw:progress-updated`。
+
+站内「我的山河」（`/profile`）依赖这段桥接；修改 `cloud.js` 时请保留该对象，否则页面只能读本地记录。

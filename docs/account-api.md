@@ -48,7 +48,7 @@
 
 - 400：字段或 ID 不合法。
 - 401：没有会话、会话过期、凭证错误。
-- 403：写请求来源或客户端头错误。
+- 403：写请求来源或客户端头错误，或账号已被管理员停用。
 - 409：账号名冲突、账号切换、进度版本冲突。
 - 413 / 415：请求超过 16 KiB / 非 JSON。
 - 429：触发基础限流，Retry-After 为当前窗口剩余秒数。
@@ -60,30 +60,35 @@
 
 ## 数据与会话
 
-MySQL InnoDB 表为 `users`、`sessions`、`progress`，`schema_version` 记录结构版本；连接采用 utf8mb4，进度数组使用 JSON 列。注册的用户、初始进度和会话在同一事务内创建，任何一步失败全部回滚；登录在事务中复核凭证、创建会话并读取进度。进度更新使用事务及版本条件避免并发覆盖。密码使用带独立随机盐的 scrypt，参数为 N=131072、r=8、p=1；派生最多同时运行两次。高熵会话令牌仅存 SHA-256 摘要，不存原文。会话有效期为七天，退出撤销当前会话。
+MySQL InnoDB 表为 `users`、`sessions`、`progress`、`admin_sessions`、`admin_audit_events`，`schema_version` 当前为版本 2；连接采用 utf8mb4，进度数组使用 JSON 列。注册的用户、初始进度和会话在同一事务内创建，任何一步失败全部回滚；登录在事务中复核凭证、创建会话并读取进度。进度更新使用事务及版本条件避免并发覆盖。密码使用带独立随机盐的 scrypt，参数为 N=131072、r=8、p=1；派生最多同时运行两次。高熵会话令牌仅存 SHA-256 摘要，不存原文。会话有效期为七天，退出撤销当前会话。版本 1 数据库需先由具备 DDL 权限的账号执行 `npm run db:init` 升级；生产模式 `MYSQL_AUTO_INIT=false` 会拒绝版本 1，避免应用账号在冷启动时执行 DDL。
 
 恢复码和 `/recover` 接口已移除，MySQL 不保存恢复码列。从 SQLite 迁移时保留账号、密码哈希与个人进度，不迁移旧会话及恢复码，用户需重新登录。迁移和备份恢复仅允许空目标数据库，操作前停止目标服务，详见 README。
 
-服务不向用户提供管理能力：个人账号令牌不能访问任何管理接口。另有一套独立口令保护的只读管理接口（见下节），两者互不代签。没有把旧管理后台的口令写入配置或代码。
+服务不向用户提供管理能力：个人账号令牌不能访问任何管理接口。另有一套独立口令保护的账号管理接口（见下节），两者互不代签。没有把旧管理后台的口令写入配置或代码。
 
 ## 管理接口（`/api/account/admin`）
 
-仅供站内数据看板的「账号」页使用。口令与用户密码体系无关：`ADMIN_PASSWORD_HASH`（`scrypt$N$r$p$salt$key`，用 `server/security.mjs` 的 `hashPassword` 生成）与 `ADMIN_TOKEN_SECRET`（32 字节以上随机串）由部署环境提供，缺任一项时全部返回 503。
+仅供站内数据看板的管理模块使用。口令与用户密码体系无关：`ADMIN_PASSWORD_HASH`（`scrypt$N$r$p$salt$key`，用 `server/security.mjs` 的 `hashPassword` 生成）与 `ADMIN_TOKEN_SECRET`（32 字节以上随机串）由部署环境提供，缺任一项时全部返回 503。`ADMIN_NAME` 是写入审计记录的操作者名称，默认 `admin`；共享同一个部署口令的人仍无法被区分。
 
 | 方法 | 路径 | 请求体 | 结果 |
 | --- | --- | --- | --- |
-| POST | `/login` | `password` | `token, expiresAt`（12 小时） |
-| POST | `/overview` | `token` | 注册总数、近 7 天新增、有进度账号、完成节点/题目/印章数、会话数、最近写入 |
-| POST | `/accounts` | `token, q, sort, order, page, size, hasProgress, session` | 账号列表 |
-| POST | `/account` | `token, username` | 单账号只读详情 |
+| POST | `/login` | `password` | `token, expiresAt, actor`（12 小时） |
+| POST | `/logout` | `token` | 立即删除当前管理会话并记录审计 |
+| POST | `/overview` | `token` | 注册总数、正常/停用账号数、近 7 天新增、有进度账号、完成节点/题目/印章数、会话数、最近写入 |
+| POST | `/accounts` | `token, q, sort, order, page, size, hasProgress, session, status` | 账号列表；`status` 为 `active` 或 `disabled` |
+| POST | `/account` | `token, username` | 单账号详情、账号状态和最近 10 条审计 |
 | POST | `/sessions/revoke` | `token, username` | 删除该账号全部会话（不影响学习记录） |
+| POST | `/accounts/status` | `token, username, status: active/disabled, reason` | 停用或恢复账号；停用同时撤销全部用户会话 |
+| POST | `/audit` | `token, page, size, action?, result?` | 分页读取管理审计，不返回口令或令牌 |
 
 约束：
 
 - 响应里不出现 `id`、`password_hash`、`token_hash`；`sort` 只接受白名单键，`order` 只接受 asc/desc，`page/size` 夹取后以整数拼接。
 - 令牌放请求体，不放 `Authorization`；写请求仍需 `Origin` 在 `ALLOWED_ORIGINS` 内且带 `X-SHW-Client: account-v1`。
-- 管理令牌不写 `sessions` 表，用户接口的会话校验看不到它。
-- `sessions` 表没有创建时间，「最近登录」无法计算，因此不提供；`users` 表没有状态字段，列表中的「会话」只表示当前是否持有未过期会话。
+- 管理令牌是 `expiresAt.nonce.HMAC`，其 SHA-256 摘要写入独立 `admin_sessions` 表；用户接口的会话校验看不到它，管理员退出后旧令牌立即失效。
+- `admin_audit_events` 记录操作者、动作、对象、结果、简短原因和时间，不记录密码、用户令牌、管理令牌或数据库配置。登录失败、来源拒绝、会话撤销、账号停用/恢复和管理员退出都会记录。
+- `sessions` 表没有创建时间，「最近登录」无法计算，因此不提供；列表中的「会话」只表示当前是否持有未过期会话。账号是否停用来自 `users.status`。
+- 停用账号后，用户登录返回 403；已存在的用户会话在停用时全部删除。恢复正常后可以重新登录，原有到访、收藏和学习标记不变。
 
 ## 前端只读桥接（`account/cloud.js`）
 

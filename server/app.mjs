@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { openDatabase, queryOne, readProgress, normalizeProgress, saveProgress, transaction, isTemporaryDatabaseError } from './store.mjs';
 import { HttpError, randomSecret, digest, hashPassword, verifyPassword, validatePassword, createLimiter } from './security.mjs';
-import { adminApi } from './admin.mjs';
+import { adminApi, recordAdminAccessDenied } from './admin.mjs';
 
 const rootDirectory = fileURLToPath(new URL('../', import.meta.url));
 const sessionLifetime = 7 * 24 * 60 * 60 * 1000;
@@ -95,7 +95,7 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
       SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = ? AND sessions.expires_at > ?
     `, [digest(token), Date.now()]);
-    if (!user) throw new HttpError(401, '请先登录，或重新登录已过期的账号。');
+    if (!user || user.status !== 'active') throw new HttpError(401, '请先登录，或重新登录已过期的账号。');
     return user;
   }
 
@@ -119,12 +119,15 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
     if (!['GET', 'POST', 'PUT', 'PATCH'].includes(method)) throw new HttpError(405, '不支持此请求方法。');
     if (method !== 'GET') {
       if (!request.headers.origin || !allowed.includes(request.headers.origin) || request.headers['x-shw-client'] !== 'account-v1') {
+        if (pathname.startsWith(`${apiPrefix}/admin/`)) {
+          await recordAdminAccessDenied(database, pathname, 'untrusted_origin_or_missing_client');
+        }
         throw new HttpError(403, '请求来源不受信任，请在账号服务所在网站操作。');
       }
     }
     if (pathname === `${apiPrefix}/health` && method === 'GET') {
       await queryOne(database, 'SELECT 1');
-      return { service: 'shanhe-accounts', database: 'mysql', schemaVersion: 1 };
+      return { service: 'shanhe-accounts', database: 'mysql', schemaVersion: 2 };
     }
     // 管理接口走独立口令与独立令牌，不进入下面的用户会话校验
     if (pathname.startsWith(`${apiPrefix}/admin/`)) {
@@ -163,9 +166,11 @@ export async function createApp({ databaseOptions, publicOrigin = 'http://localh
       const user = await queryOne(database, 'SELECT * FROM users WHERE username = ?', [username]);
       const valid = await verifyPassword(body.password, user?.password_hash || dummyPassword);
       if (!user || !valid) throw new HttpError(401, '账号或密码不正确。');
+      if (user.status !== 'active') throw new HttpError(403, '账号已停用，请联系管理员。');
       return transaction(database, async connection => {
         const current = await queryOne(connection, 'SELECT * FROM users WHERE id = ? FOR UPDATE', [user.id]);
         if (!current || current.password_hash !== user.password_hash) throw new HttpError(401, '凭证已变更，请重新登录。');
+        if (current.status !== 'active') throw new HttpError(403, '账号已停用，请联系管理员。');
         const session = await issueSession(connection, request, user.id);
         return { ...(await accountState(current, connection)), ...session };
       });

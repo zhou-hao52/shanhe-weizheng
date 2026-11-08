@@ -10,7 +10,7 @@ try {
   try {
     await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
-    const [users] = await connection.execute('SELECT id, username, nickname, password_hash, created_at FROM users ORDER BY id');
+    const [users] = await connection.execute('SELECT id, username, nickname, password_hash, created_at, status, disabled_at, disabled_reason FROM users ORDER BY id');
     const [progress] = await connection.execute('SELECT * FROM progress ORDER BY user_id');
     snapshot = { format: 'shanhe-accounts', version: 1, createdAt: new Date().toISOString(), users, progress };
     await connection.commit();

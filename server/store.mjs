@@ -15,6 +15,7 @@ export function isTemporaryDatabaseError(error) {
 
 export async function openDatabase(options = databaseConfig()) {
   const { autoInitialize = true, ...connectionOptions } = options;
+  const schemaVersion = 2;
   const database = mysql.createPool({
     ...connectionOptions,
     charset: 'utf8mb4',
@@ -27,22 +28,36 @@ export async function openDatabase(options = databaseConfig()) {
   try {
     if (!autoInitialize) {
       const version = await queryOne(database, 'SELECT version FROM schema_version WHERE id = 1');
-      if (version?.version !== 1) throw new Error('数据库尚未初始化或版本不兼容，请先执行 npm run db:init。');
-      await database.execute('SELECT id, username, nickname, password_hash, created_at FROM users LIMIT 0');
+      if (version?.version !== schemaVersion) throw new Error('数据库尚未升级到版本 2，请先执行 npm run db:init。');
+      await database.execute('SELECT id, username, nickname, password_hash, created_at, status, disabled_at, disabled_reason FROM users LIMIT 0');
       await database.execute('SELECT token_hash, user_id, expires_at FROM sessions LIMIT 0');
       await database.execute('SELECT user_id, visited_json, favorites_json, quiz_json, last_node, revision, updated_at FROM progress LIMIT 0');
+      await database.execute('SELECT token_hash, actor, created_at, expires_at FROM admin_sessions LIMIT 0');
+      await database.execute('SELECT id, actor, action, target, result, detail, created_at FROM admin_audit_events LIMIT 0');
       return database;
     }
     await database.execute(`CREATE TABLE IF NOT EXISTS schema_version (
       id TINYINT PRIMARY KEY, version INT NOT NULL
     ) ENGINE=InnoDB`);
-    const version = await queryOne(database, 'SELECT version FROM schema_version WHERE id = 1');
-    if (version && version.version !== 1) throw new Error('数据库版本与当前程序不兼容。');
+    const existing = await queryOne(database, 'SELECT version FROM schema_version WHERE id = 1');
+    if (existing && ![1, schemaVersion].includes(Number(existing.version))) throw new Error('数据库版本与当前程序不兼容。');
     const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
     for (const statement of schema.split(';').map(value => value.trim()).filter(Boolean)) {
       await database.execute(statement);
     }
-    await database.execute('INSERT IGNORE INTO schema_version (id, version) VALUES (1, 1)');
+    for (const [column, definition] of [
+      ['status', "VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'active'"],
+      ['disabled_at', 'VARCHAR(24) CHARACTER SET ascii'],
+      ['disabled_reason', 'VARCHAR(160)']
+    ]) {
+      const present = await queryOne(database, `
+        SELECT COUNT(*) AS n FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = ?
+      `, [column]);
+      if (!Number(present?.n)) await database.execute(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+    }
+    await database.execute(`INSERT INTO schema_version (id, version) VALUES (1, ?)
+      ON DUPLICATE KEY UPDATE version = VALUES(version)`, [schemaVersion]);
     return database;
   } catch (error) {
     await database.end();

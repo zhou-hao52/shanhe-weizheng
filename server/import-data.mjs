@@ -9,11 +9,17 @@ export async function importData(database, snapshot) {
   const userIds = new Set();
   const usernames = new Set();
   for (const user of snapshot.users) {
+    const status = user?.status ?? 'active';
+    const disabledAt = user?.disabled_at ?? null;
+    const disabledReason = user?.disabled_reason ?? null;
     if (!user || typeof user.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(user.id)
       || typeof user.username !== 'string' || !/^[a-z0-9_]{3,24}$/.test(user.username)
       || typeof user.nickname !== 'string' || !user.nickname.trim() || [...user.nickname].length > 24
       || typeof user.password_hash !== 'string' || !/^scrypt\$131072\$8\$1\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(user.password_hash)
-      || !validDate(user.created_at) || userIds.has(user.id) || usernames.has(user.username)) {
+      || !validDate(user.created_at) || !['active', 'disabled'].includes(status)
+      || (disabledAt !== null && !validDate(disabledAt))
+      || (disabledReason !== null && (typeof disabledReason !== 'string' || [...disabledReason].length > 160))
+      || userIds.has(user.id) || usernames.has(user.username)) {
       throw new Error('备份中存在无效或重复账号，未导入。');
     }
     userIds.add(user.id);
@@ -35,8 +41,11 @@ export async function importData(database, snapshot) {
     const counts = await queryOne(connection, 'SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM progress) + (SELECT COUNT(*) FROM sessions) AS total');
     if (Number(counts.total) !== 0) throw new Error('目标数据库不是空库，已拒绝覆盖。请停止目标服务并使用全新数据库。');
     for (const user of snapshot.users) {
-      await connection.execute('INSERT INTO users (id, username, nickname, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-        [user.id, user.username, user.nickname, user.password_hash, user.created_at]);
+      await connection.execute(`
+        INSERT INTO users (id, username, nickname, password_hash, created_at, status, disabled_at, disabled_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [user.id, user.username, user.nickname, user.password_hash, user.created_at,
+        user.status ?? 'active', user.disabled_at ?? null, user.disabled_reason ?? null]);
     }
     for (const row of progress) {
       await connection.execute('INSERT INTO progress (user_id, visited_json, favorites_json, quiz_json, last_node, revision, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',

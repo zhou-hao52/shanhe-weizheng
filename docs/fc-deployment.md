@@ -51,14 +51,14 @@ FC 默认 HTTP 触发器域名属于测试入口；官方文档说明 `aliyuncs.
 3. 完成后标记版本：
 
    ```sql
-   INSERT IGNORE INTO schema_version (id, version) VALUES (1, 1);
+   INSERT IGNORE INTO schema_version (id, version) VALUES (1, 2);
    ```
 
-也可以在有安全数据库连接的管理环境执行 `npm ci` 和 `npm run db:init`。该命令需要初始化账号具备目标库的 `SELECT, INSERT, CREATE, INDEX, REFERENCES` 权限，不清空现有记录；它不是数据库版本升级工具。初始化完成后，函数只配置业务账号，权限限制为目标库的 `SELECT, INSERT, UPDATE, DELETE`。
+也可以在有安全数据库连接的管理环境执行 `npm ci` 和 `npm run db:init`。该命令需要初始化账号具备目标库的 `SELECT, INSERT, CREATE, ALTER, INDEX, REFERENCES` 权限，会从版本 1 增量升级到版本 2，不清空现有记录。升级完成后，函数只配置业务账号，权限限制为目标库的 `SELECT, INSERT, UPDATE, DELETE`。
 
 Navicat 只是数据库管理客户端，不负责运行网站，也不是多设备访问的前提。优先使用 DMS 或云厂商支持的安全私网连接方式。确需本机 Navicat 连接时，只临时允许本机公网 IP、启用 TLS 并验证证书，完成后撤销访问；不要把数据库开放给所有人。不要把数据库密码写入代码、截图或聊天。
 
-`MYSQL_AUTO_INIT=false` 时，冷启动只检查版本与业务表，不执行 DDL；未初始化或缺表会拒绝启动。旧 SQLite 数据不会自动导入，确需保留时先备份，再按 README 在空目标库迁移，不在运行中的函数里执行恢复或迁移。
+`MYSQL_AUTO_INIT=false` 时，冷启动只检查版本与业务表，不执行 DDL；未初始化、仍是版本 1 或缺表都会拒绝启动。升级时必须先由数据库管理员执行 `npm run db:init`，再发布新版函数。旧 SQLite 数据不会自动导入，确需保留时先备份，再按 README 在空目标库迁移，不在运行中的函数里执行恢复或迁移。
 
 ## 4. 打包整站 ZIP（当前使用方式）
 
@@ -127,7 +127,7 @@ Apple Silicon 也显式使用 `linux/amd64`。选 FC 能拉取的同地域 ACR �
 
 FC 临时磁盘不适合保存 `backups/`。启用云数据库备份，必要时在可信管理环境运行应用备份并安全另存；不要在 HTTP 请求中生成或公开下载包含密码哈希的备份。
 
-回滚时切换回已验收函数版本（或镜像）及对应配置，继续连接同一个兼容数据库；不要删除数据库、重建表或用旧备份覆盖线上记录。本次仅增加可选部署方式，不更改业务表版本。
+回滚只能切换到兼容数据库版本 2 的已验收函数版本（或镜像），并继续连接同一个数据库；不要切回不支持版本 2 的旧程序，也不要删除数据库、重建表或用旧备份覆盖线上记录。
 
 ## 官方核对入口
 

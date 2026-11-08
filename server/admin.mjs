@@ -59,7 +59,7 @@ async function scalar(database, statement, parameters = []) {
 }
 
 function cleanTerm(value) {
-  return typeof value === 'string' ? value.replace(/[%_\\]/g, '').trim().slice(0, 24) : '';
+  return typeof value === 'string' ? value.trim().slice(0, 24) : '';
 }
 
 function clampInt(value, fallback, minimum, maximum) {
@@ -125,8 +125,8 @@ async function listAccounts(database, body) {
   const where = [];
   const params = [];
   if (term) {
-    where.push('(u.username LIKE ? OR u.nickname LIKE ?)');
-    params.push(`%${term}%`, `%${term}%`);
+    where.push('(LOCATE(?, u.username) > 0 OR LOCATE(?, u.nickname) > 0)');
+    params.push(term, term);
   }
   if (hasProgress) {
     where.push(
